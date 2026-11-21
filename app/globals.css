@@ -1,0 +1,325 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   UrbanPulse design tokens (inherited from CapstoneConnect): the single source of truth for colour, type,
+   radius and elevation. Components consume these, never raw hex.
+
+   The palettes differ only in colour. Structure, spacing and components are
+   shared, so light and dark render the same layout.
+--------------------------------------------------------------------------- */
+
+:root {
+  /* Light theme: warm off-white canvas, white cards, deep sage primary. */
+  --canvas: #f6f4ef;
+  --surface: #ffffff;
+  --surface-raised: #efede7;
+  --surface-sunken: #f1efe9;
+  --field: #ffffff;
+  --overlay: #ffffff;
+
+  --ink: #161a17;
+  --muted: #5b6461;
+
+  --hair: #e3dfd6;
+  --hair-strong: #cdc7ba;
+  --hair-control: #847e73;
+
+  --primary: #22684b;
+  --primary-hover: #1a5540;
+  --primary-soft: #e7f0e9;
+  --on-primary: #ffffff;
+
+  /* Second accent, used sparingly: terracotta. */
+  --accent: #a8542f;
+  --accent-soft: #f7e9e1;
+
+  --success: #1f7a52;
+  --warning: #8a5f10;
+  --danger: #a63c2c;
+  --info: #35597a;
+
+  --success-soft: #e4f2ea;
+  --warning-soft: #fbf1da;
+  --danger-soft: #fbe9e4;
+  --info-soft: #e8eef4;
+
+  --scrim: rgb(22 26 23 / 0.42);
+  /* Light cards rely on the hairline border; shadows belong to dialogs and toasts. */
+  --shadow-card: 0 0 0 0 rgb(0 0 0 / 0);
+  --shadow-pop: 0 8px 24px rgb(22 26 23 / 0.12);
+
+  /* Initials avatars: low-saturation earth tones, not bright random hues. */
+  --av-1-bg: #edf0e1;
+  --av-1-fg: #4a5331;
+  --av-2-bg: #f7eae0;
+  --av-2-fg: #7c4a2c;
+  --av-3-bg: #e6efea;
+  --av-3-fg: #3b584c;
+  --av-4-bg: #f1e8f2;
+  --av-4-fg: #64476b;
+  --av-5-bg: #f5efdf;
+  --av-5-fg: #6b5b34;
+
+  /* Data-viz: categorical series (fixed order, never cycled). */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --grid: #e9e5dc;
+
+  /* Traffic flow status: free / moderate / heavy / jam. Always shipped with a label. */
+  --flow-free: #2f9e62;
+  --flow-moderate: #d29a0c;
+  --flow-heavy: #e0702a;
+  --flow-jam: #c8342b;
+
+  /* Map ground. */
+  --map-ground: #ece9e1;
+  --map-block: #f6f4ef;
+  --map-road: #d3cdc0;
+  --map-arterial: #bdb5a5;
+  --map-green: #d9e8d4;
+  --map-water: #cfe0ec;
+  --map-industrial: #e9e0d6;
+}
+
+.dark,
+[data-theme="dark"] {
+  /* Dark theme: layered warm charcoal, sage primary, terracotta as a second accent. */
+  --canvas: #121513;
+  --surface: #1a1f1c;
+  --surface-raised: #222823;
+  --surface-sunken: #171b18;
+  --field: #171b18;
+  --overlay: #222823;
+
+  --ink: #ece9e1;
+  --muted: #a3a9a3;
+
+  --hair: #2b332f;
+  --hair-strong: #3a443e;
+  --hair-control: #63706a;
+
+  --primary: #8ccba5;
+  --primary-hover: #a3d9b7;
+  --primary-soft: #1e2a22;
+  --on-primary: #0f1a14;
+
+  --accent: #e08a63;
+  --accent-soft: #2b211b;
+
+  --success: #6fcb8e;
+  --warning: #e3b341;
+  --danger: #f08a80;
+  --info: #7fa6d1;
+
+  --success-soft: #17251d;
+  --warning-soft: #2a2416;
+  --danger-soft: #2b1c1a;
+  --info-soft: #1a2229;
+
+  --scrim: rgb(9 12 10 / 0.66);
+  --shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.4);
+
+  --av-1-bg: #232a1e;
+  --av-1-fg: #cbd3ac;
+  --av-2-bg: #2a211b;
+  --av-2-fg: #e3bba0;
+  --av-3-bg: #1d2723;
+  --av-3-fg: #b4cbc1;
+  --av-4-bg: #27202a;
+  --av-4-fg: #d3bcd9;
+  --av-5-bg: #2a261c;
+  --av-5-fg: #ddd0a8;
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --grid: #262d29;
+
+  --flow-free: #5fc98a;
+  --flow-moderate: #e8b931;
+  --flow-heavy: #f08a4b;
+  --flow-jam: #f06a5e;
+
+  --map-ground: #0f1311;
+  --map-block: #171c19;
+  --map-road: #2c3430;
+  --map-arterial: #3b4540;
+  --map-green: #18261d;
+  --map-water: #142231;
+  --map-industrial: #221f1b;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-sunken: var(--surface-sunken);
+  --color-field: var(--field);
+  --color-overlay: var(--overlay);
+
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+
+  --color-hair: var(--hair);
+  --color-hair-strong: var(--hair-strong);
+  --color-hair-control: var(--hair-control);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-on-primary: var(--on-primary);
+
+  --color-scrim: var(--scrim);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+
+  --color-success-soft: var(--success-soft);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger-soft: var(--danger-soft);
+  --color-info-soft: var(--info-soft);
+
+  /* Body and UI in Inter, headings in Fraunces. */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, ui-serif, serif;
+  --font-serif: "Fraunces", Georgia, ui-serif, serif;
+
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+  --color-grid: var(--grid);
+  --color-flow-free: var(--flow-free);
+  --color-flow-moderate: var(--flow-moderate);
+  --color-flow-heavy: var(--flow-heavy);
+  --color-flow-jam: var(--flow-jam);
+
+  --radius-card: 10px;
+  --radius-control: 6px;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    color-scheme: light;
+  }
+
+  html.dark,
+  html[data-theme="dark"] {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 22px;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--primary-soft);
+    color: var(--ink);
+  }
+
+  /* Long lists and chat scroll quietly instead of adding chrome. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--hair-strong) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Small label that opens a section or a metadata block. Sentence case, muted. */
+.eyebrow {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.rule {
+  border-top: 1px solid var(--hair);
+}
+
+/* Initials avatars: one of five earth tones, chosen deterministically. */
+.avatar-tone[data-tone="1"] {
+  background-color: var(--av-1-bg);
+  color: var(--av-1-fg);
+}
+.avatar-tone[data-tone="2"] {
+  background-color: var(--av-2-bg);
+  color: var(--av-2-fg);
+}
+.avatar-tone[data-tone="3"] {
+  background-color: var(--av-3-bg);
+  color: var(--av-3-fg);
+}
+.avatar-tone[data-tone="4"] {
+  background-color: var(--av-4-bg);
+  color: var(--av-4-fg);
+}
+.avatar-tone[data-tone="5"] {
+  background-color: var(--av-5-bg);
+  color: var(--av-5-fg);
+}
+
+/* Live indicator pulse for "streaming" badges. */
+@keyframes up-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.live-dot {
+  animation: up-pulse 1.6s ease-in-out infinite;
+}
+
+/* Native range inputs in the theme colour. */
+input[type="range"] {
+  accent-color: var(--primary);
+}
+
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
