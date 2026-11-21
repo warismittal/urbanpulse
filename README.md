@@ -1,5 +1,7 @@
 # UrbanPulse — Smart City Command Centre
 
+https://urbanpulse-snowy.vercel.app
+
 **Home (`/`) is a full 3D city** — a rebuild of the CapstoneConnect 3D scene (same island,
 river, bridges, downtown, airport and airliner; same colour palettes, sky, water and surf
 shaders and colour grade) with live smart-city layers on top:
