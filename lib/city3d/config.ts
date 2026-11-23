@@ -241,7 +241,8 @@ export const PLACES: Place[] = [
   { id: "shelter-hall", name: "Community Hall Shelter", kind: "shelter", x: -183.5, z: 6, height: 11 },
   { id: "shelter-school", name: "Riverside School Shelter", kind: "shelter", x: -20.5, z: 0, height: 10 },
   { id: "park", name: "Forest Park", kind: "park", x: -205, z: -100, height: 10 },
-  { id: "fair", name: "Riverside Fair", kind: "park", x: -44, z: 39, height: 28 },
+  { id: "fair", name: "Riverside Fair", kind: "park", x: -49, z: 7, height: 16 },
+  { id: "clock", name: "Clock Tower", kind: "civic", x: -62, z: -6, height: 40 },
 ];
 
 export const placeById = (id: string) => PLACES.find((p) => p.id === id)!;
@@ -253,8 +254,12 @@ export const RIVER = { x0: -167, x1: -76, z0: -171, z1: 52 };
 export const RAIL = { z: 26.2, y: 1.33, x0: -238, x1: 38, station: 9.5 };
 /** Runway (east–west) and the apron by the terminal. */
 export const RUNWAY = { z: -243, y: 0.21, x0: -71, x1: 47, gate: [-35, -231] as [number, number] };
-/** Fairground on the open ground at the north end of Airport Road. */
-export const FAIR = { x: -44, z: 39 };
+/** Animated fairground, on the model's own fair square by the river (its static rides are cleared). */
+export const FAIR = { x: -49, z: 7, scale: 0.58 };
+/** The fair square's footprint, cleared of the model's static rides. */
+export const FAIR_SQUARE = { x0: -66, x1: -38, z0: -10, z1: 20 };
+/** Clock tower on the north-west corner of the square. */
+export const CLOCK_TOWER = { x: -62, z: -6 };
 /** CCTV poles on junctions. */
 export const CCTV_NODES: { node: number; name: string }[] = [
   { node: 3, name: "Civic Lane × Terminal Ave" },

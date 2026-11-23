@@ -92,6 +92,8 @@ export function waterPatch(shore: boolean) {
           flowStreak = smoothstep(0.6, 0.8, n1 * 0.6 + n2 * 0.5);
           waterColor = mix(waterColor, uShallow * 1.2, clamp((n1 - 0.45) * 0.45, 0.0, 0.3));
           waterColor = mix(waterColor, uFoam, flowStreak * 0.16);
+          // Same lake-blue as the open water so the river and the bay read as one body.
+          waterColor = mix(waterColor, uLagoon, 0.32);
         #endif
         // Flood: silty brown water.
         waterColor = mix(waterColor, vec3(0.42, 0.36, 0.25), uFlood * 0.55);
@@ -100,7 +102,7 @@ export function waterPatch(shore: boolean) {
           bool inField = all(greaterThan(fuv, vec2(0.0))) && all(lessThan(fuv, vec2(1.0)));
           float shoreDist = inField ? texture2D(uShore, fuv).r * 127.5 : 127.5;
           float beyond = shoreDist - uWaterline;
-          waterColor = mix(waterColor, uLagoon, (1.0 - smoothstep(0.0, 45.0, beyond)) * 0.85);
+          waterColor = mix(waterColor, uLagoon, 0.32 + (1.0 - smoothstep(0.0, 45.0, beyond)) * 0.4);
           float breakup = 0.55 + 0.45 * sin(wp.x * 0.23 + uTime * 0.6) * sin(wp.y * 0.19 - uTime * 0.5);
           float edge = 1.0 - smoothstep(0.0, 1.6, beyond);
           float rollIn = 7.0 * (1.0 - fract(uTime * 0.14 + 0.02 * (wp.x + wp.y)));

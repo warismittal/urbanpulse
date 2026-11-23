@@ -898,6 +898,70 @@ export class CityEngine {
     });
   }
 
+  /**
+   * Remove model triangles that lie entirely inside a world-space box and whose
+   * material passes `test` — used to clear the old static fairground and the
+   * model's parked train so the animated versions don't double up.
+   */
+  carve(box: [number, number, number, number, number, number], test: (material: string) => boolean) {
+    const v = new THREE.Vector3();
+    let removed = 0;
+    const inside = (P: THREE.BufferAttribute | THREE.InterleavedBufferAttribute, i: number, m: THREE.Matrix4) => {
+      v.fromBufferAttribute(P, i).applyMatrix4(m);
+      return v.x > box[0] && v.x < box[3] && v.y > box[1] && v.y < box[4] && v.z > box[2] && v.z < box[5];
+    };
+    for (const o of this.cityMeshes) {
+      const g = o.geometry;
+      const P = g.attributes.position;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      o.updateMatrixWorld();
+      const M = o.matrixWorld;
+      const groups = g.groups.length ? g.groups : [{ start: 0, count: g.index ? g.index.count : P.count, materialIndex: 0 }];
+      if (g.index) {
+        const arr = g.index.array;
+        const out: number[] = [];
+        const ng: { start: number; count: number; materialIndex: number }[] = [];
+        let any = false;
+        for (const gr of groups) {
+          const name = (mats[gr.materialIndex ?? 0] ?? mats[0]).name;
+          const start = out.length;
+          const hit = test(name);
+          for (let t = gr.start; t < gr.start + gr.count; t += 3) {
+            if (hit && inside(P, arr[t], M) && inside(P, arr[t + 1], M) && inside(P, arr[t + 2], M)) {
+              any = true;
+              removed++;
+              continue;
+            }
+            out.push(arr[t], arr[t + 1], arr[t + 2]);
+          }
+          ng.push({ start, count: out.length - start, materialIndex: gr.materialIndex ?? 0 });
+        }
+        if (any) {
+          g.setIndex(out);
+          g.clearGroups();
+          if (Array.isArray(o.material)) for (const x of ng) g.addGroup(x.start, x.count, x.materialIndex);
+        }
+      } else {
+        let any = false;
+        for (const gr of groups) {
+          if (!test((mats[gr.materialIndex ?? 0] ?? mats[0]).name)) continue;
+          for (let t = gr.start; t < gr.start + gr.count; t += 3) {
+            if (inside(P, t, M) && inside(P, t + 1, M) && inside(P, t + 2, M)) {
+              const x = P.getX(t), y = P.getY(t), z = P.getZ(t);
+              P.setXYZ(t + 1, x, y, z);
+              P.setXYZ(t + 2, x, y, z);
+              any = true;
+              removed++;
+            }
+          }
+        }
+        if (any) P.needsUpdate = true;
+      }
+    }
+    this.renderer.shadowMap.needsUpdate = true;
+    return removed;
+  }
+
   /** City meshes that use a given material. */
   meshesWith(material: string) {
     return this.cityMeshes.filter((m) => (Array.isArray(m.material) ? m.material : [m.material]).some((x) => x.name === material));

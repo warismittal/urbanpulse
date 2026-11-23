@@ -29,7 +29,7 @@ import { CityView, WorldLabels, useCity3D, type PaletteId, type Quality } from "
 import { Segmented, Toggle } from "@/components/common/kit";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { CCTV_NODES, FAIR, PALETTES, PLACES, RAIL, ROAD_NODES, RUNWAY } from "@/lib/city3d/config";
+import { CCTV_NODES, CLOCK_TOWER, FAIR, PALETTES, PLACES, RAIL, ROAD_NODES, RUNWAY } from "@/lib/city3d/config";
 import { formatHour } from "@/lib/city3d/daynight";
 import type { ScenarioKind3 } from "@/lib/city3d/layers3d";
 import { STATIONS, aqiBand, stationReading } from "@/lib/sim/environment";
@@ -55,7 +55,8 @@ const VIEWS = [
   { id: "downtown", label: "Downtown", x: 0, z: -95, r: 170, phi: 0.95 },
   { id: "river", label: "River", x: -120, z: -40, r: 230, phi: 0.85 },
   { id: "airport", label: "Airport", x: -10, z: -225, r: 190, phi: 0.9 },
-  { id: "fair", label: "Fair", x: FAIR.x, z: FAIR.z, r: 95, phi: 1.0 },
+  { id: "fair", label: "Fair", x: FAIR.x, z: FAIR.z, r: 80, phi: 1.0 },
+  { id: "clock", label: "Clock tower", x: CLOCK_TOWER.x, z: CLOCK_TOWER.z, r: 70, phi: 1.12 },
   { id: "rail", label: "Station", x: RAIL.station, z: RAIL.z, r: 120, phi: 1.0 },
   { id: "sea", label: "Horizon", x: -98, z: -106, r: 900, phi: 1.32 },
 ];
@@ -201,6 +202,7 @@ function TopRight({ palette, setPalette, quality, setQuality }: { palette: Palet
   const [, tick] = useState(0);
   const [rate, setRate] = useState("60");
   const film = h?.engine.film ?? false;
+  const [show, setShow] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
   useEffect(() => {
     const t = window.setInterval(() => tick((x) => x + 1), 1000);
     return () => window.clearInterval(t);
@@ -217,7 +219,16 @@ function TopRight({ palette, setPalette, quality, setQuality }: { palette: Palet
     setPalette("auto");
   };
   return (
-    <div className="pointer-events-none absolute right-4 top-4 flex max-w-[min(720px,calc(100vw-420px))] flex-col items-end gap-2">
+    <div className="pointer-events-none absolute right-2 top-2 flex max-w-[calc(100vw-16px)] flex-col items-end gap-2 md:right-4 md:top-4 md:max-w-[min(720px,calc(100vw-440px))]">
+      <button
+        onClick={() => setShow(!show)}
+        aria-expanded={show}
+        className={cn(glass, "flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium tabular-nums text-ink md:hidden")}
+      >
+        <Clock className="h-4 w-4 text-muted" /> {formatHour(hour)} · {show ? "Close" : "View & time"}
+      </button>
+      {show ? (
+      <>
       <div className={cn(glass, "flex flex-wrap items-center justify-end gap-2 p-2")}>
         <Segmented
           ariaLabel="Camera view"
@@ -277,6 +288,8 @@ function TopRight({ palette, setPalette, quality, setQuality }: { palette: Palet
           <Clapperboard className="h-3.5 w-3.5" /> Film
         </button>
       </div>
+      </>
+      ) : null}
     </div>
   );
 }
@@ -287,7 +300,7 @@ function AlertTicker() {
   const list = alerts.slice(0, 3);
   if (!list.length) return null;
   return (
-    <div className={cn(glass, "absolute bottom-4 right-4 w-[min(380px,calc(100vw-32px))] p-3")}>
+    <div className={cn(glass, "absolute bottom-4 right-4 hidden w-[min(380px,calc(100vw-32px))] p-3 lg:block")}>
       <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">Latest alerts</p>
       <ul className="space-y-1.5">
         {list.map((a) => (
@@ -320,6 +333,8 @@ function SidePanel({
   const allowed = user ? roleInfo(user.role).modes : [];
   const modes = MODES.filter((m) => allowed.includes(m.id));
   const [, setTick] = useState(0);
+  // Folded by default on phones so the city fills the screen.
+  const [open, setOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
   useEffect(() => {
     const t = window.setInterval(() => setTick((x) => x + 1), 500);
     return () => window.clearInterval(t);
@@ -328,17 +343,39 @@ function SidePanel({
     if (user && !allowed.includes(mode)) setMode("overview");
   }, [user, allowed, mode, setMode]);
   return (
-    <aside className={cn(glass, "absolute bottom-4 left-4 top-4 flex w-[min(380px,calc(100vw-32px))] flex-col overflow-hidden")}>
-      <div className="border-b border-black/5 px-4 pb-2 pt-3 dark:border-white/10">
-        <p className="text-[15px] font-semibold text-ink">Live city</p>
-        <p className="text-[12px] text-muted">{h ? "Drag to orbit · right-drag to pan · scroll to zoom" : "Loading…"}</p>
+    <aside
+      className={cn(
+        glass,
+        "absolute flex flex-col overflow-hidden transition-[max-height,width] duration-300 ease-out",
+        // Phone: a bottom sheet. Desktop: a side panel that can fold away.
+        "inset-x-2 bottom-2 md:inset-x-auto md:bottom-4 md:left-4 md:top-4 md:w-[380px]",
+        open ? "max-h-[52vh] md:max-h-none" : "max-h-[118px] md:bottom-auto md:max-h-[132px]"
+      )}
+    >
+      <div className={cn("px-4 pb-2 pt-3", open && "border-b border-black/5 dark:border-white/10")}>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-[15px] font-semibold text-ink">Live city</p>
+            <p className="hidden text-[12px] text-muted sm:block">{h ? "Drag to orbit · right-drag to pan · scroll to zoom" : "Loading…"}</p>
+          </div>
+          <button
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            className="rounded-control px-2 py-1 text-[12px] text-muted hover:bg-black/5 hover:text-ink dark:hover:bg-white/5"
+          >
+            {open ? "Hide panel" : "Show panel"}
+          </button>
+        </div>
         <div className="mt-2.5 grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(1, modes.length)}, minmax(0, 1fr))` }} role="tablist" aria-label="Layer">
           {modes.map((m) => (
             <button
               key={m.id}
               role="tab"
               aria-selected={mode === m.id}
-              onClick={() => setMode(m.id)}
+              onClick={() => {
+                setMode(m.id);
+                setOpen(true);
+              }}
               className={cn(
                 "flex flex-col items-center gap-0.5 rounded-control px-1 py-1.5 text-[10px] font-medium transition-colors",
                 mode === m.id ? "bg-primary text-on-primary" : "text-muted hover:bg-black/5 hover:text-ink dark:hover:bg-white/5"
@@ -350,7 +387,7 @@ function SidePanel({
           ))}
         </div>
       </div>
-      <div key={mode} className="min-h-0 flex-1 animate-[fadein_.3s_ease-out] overflow-y-auto px-4 py-3">
+      <div key={mode} className={cn("min-h-0 flex-1 animate-[fadein_.3s_ease-out] overflow-y-auto px-4 py-3", !open && "hidden")}>
         {!h ? <p className="text-[13px] text-muted">The city is loading…</p> : null}
         {h && mode === "overview" ? <OverviewMode /> : null}
         {h && mode === "traffic" ? <TrafficMode /> : null}
@@ -430,6 +467,7 @@ function LifeStatus() {
   const rows: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; x: number; z: number; r: number }[] = [
     { icon: TrainFront, label: "Heritage steam train", value: st.train, x: RAIL.station, z: RAIL.z, r: 110 },
     { icon: Plane, label: "Flight AI-27", value: st.plane, x: (RUNWAY.x0 + RUNWAY.x1) / 2, z: RUNWAY.z, r: 200 },
+    { icon: Clock, label: "Clock tower", value: `Shows ${formatHour(h.engine.hour)} on all four faces · Swiss flag flying`, x: CLOCK_TOWER.x, z: CLOCK_TOWER.z, r: 70 },
     { icon: FerrisWheel, label: "Riverside Fair", value: `Wheel ${st.fair.wheel.toLowerCase()} · carousel ${st.fair.carousel.toLowerCase()} · ~${st.fair.visitors} visitors`, x: FAIR.x, z: FAIR.z, r: 95 },
   ];
   return (

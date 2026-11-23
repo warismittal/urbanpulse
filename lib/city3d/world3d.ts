@@ -10,7 +10,7 @@
  * at dusk and go off at dawn.
  */
 import * as THREE from "three";
-import { CENTER, FAIR, PLACES, RAIL, RUNWAY } from "./config";
+import { CENTER, CLOCK_TOWER, FAIR, FAIR_SQUARE, PLACES, RAIL, RUNWAY } from "./config";
 import type { CityEngine } from "./engine";
 import type { Traffic3D } from "./traffic3d";
 import { mergeParts } from "./vehicles";
@@ -500,6 +500,8 @@ class Airliner {
   private pitch = 0;
   private roll = 0;
   private lift = 0;
+  private departAt = -1;
+  static readonly SLOT = 180;
   private prev = new THREE.Vector3();
   private navR: THREE.Mesh;
   private navG: THREE.Mesh;
@@ -587,12 +589,22 @@ class Airliner {
   update(dt: number, night: number, t: number) {
     const seg = this.segs[this.i];
     let pos: THREE.Vector3;
+    let label = seg.label;
     if (seg.kind === "hold") {
       this.hold += dt;
       this.v = 0;
       pos = seg.at(0);
-      if (this.hold >= seg.len) {
+      // Scheduled departures: the flight leaves the stand on the next 3-minute slot (after at least 25 s of boarding).
+      const stand = seg.label.startsWith("On stand");
+      if (stand && this.departAt < 0) this.departAt = Math.max(t + 25, Math.ceil(t / Airliner.SLOT) * Airliner.SLOT);
+      const done = stand ? t >= this.departAt : this.hold >= seg.len;
+      if (stand) {
+        const left = Math.max(0, Math.ceil(this.departAt - t));
+        label = `On stand · boarding · departs in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+      }
+      if (done) {
         this.hold = 0;
+        this.departAt = -1;
         this.next();
       }
     } else {
@@ -606,7 +618,7 @@ class Airliner {
         this.next();
       }
     }
-    this.status = seg.label;
+    this.status = label;
     const d = pos.clone().sub(this.prev);
     const h = Math.hypot(d.x, d.z);
     if (h > 1e-3) {
@@ -677,16 +689,11 @@ class Fairground {
   constructor(engine: CityEngine) {
     this.x = FAIR.x;
     this.z = FAIR.z;
-    this.y = engine.surfaceY(FAIR.x, FAIR.z, (m) => !/tree|forest|bld|glass|facade/i.test(m), 6) ?? 0;
+    this.y = engine.surfaceY(FAIR.x, FAIR.z, (m) => /pavement|earth|grass|terrain|asphalt|road/i.test(m), 6) ?? 0.2;
     this.group.position.set(this.x, this.y, this.z);
     this.bulbMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
 
-    // Ground: a packed-earth plaza with a fence.
-    const plaza = new THREE.Mesh(new THREE.CircleGeometry(24, 40), new THREE.MeshStandardMaterial({ color: "#b49b74", roughness: 1 }));
-    plaza.rotation.x = -Math.PI / 2;
-    plaza.position.y = 0.05;
-    plaza.receiveShadow = true;
-    this.group.add(plaza);
+    // The square's own paving is the ground; the rides sit on it at a scale that fits the square.
 
     this.buildWheel();
     this.buildCarousel();
@@ -747,7 +754,11 @@ class Fairground {
       const q = this.freeSpot();
       this.crowd.push({ x: p.x, z: p.z, tx: q.x, tz: q.z, v: 0.9 + Math.random() * 0.6, c: new THREE.Color(clothes[i % clothes.length]) });
     }
-    this.group.add(this.people);
+    // Rides, stalls and lights are modelled at full size and scaled to fit the square; people stay life-size.
+    const rides = new THREE.Group();
+    rides.scale.setScalar(FAIR.scale);
+    for (const c of [...this.group.children]) rides.add(c);
+    this.group.add(rides, this.people);
     this.group.traverse((o) => {
       const mm = o as THREE.Mesh;
       if (mm.isMesh && !(mm.material as THREE.Material).transparent) mm.castShadow = true;
@@ -993,10 +1004,10 @@ class Fairground {
           p.tz = q.z;
         }
       } else {
-        p.x += (dx / d) * p.v * dt;
-        p.z += (dz / d) * p.v * dt;
+        p.x += ((dx / d) * p.v * dt) / FAIR.scale;
+        p.z += ((dz / d) * p.v * dt) / FAIR.scale;
       }
-      m.position.set(p.x, Math.abs(Math.sin(t * 7 + i)) * 0.05 * (d > 0.3 ? 1 : 0), p.z);
+      m.position.set(p.x * FAIR.scale, Math.abs(Math.sin(t * 7 + i)) * 0.05 * (d > 0.3 ? 1 : 0), p.z * FAIR.scale);
       m.rotation.y = Math.atan2(dx, dz);
       m.updateMatrix();
       this.people.setMatrixAt(shown, m.matrix);
@@ -1021,6 +1032,190 @@ class Fairground {
       a[i * 3 + 2] = this.base[i * 3 + 2] * f;
     }
     ic.needsUpdate = true;
+  }
+}
+
+
+/* ============================================================ clock tower */
+
+/**
+ * A Victorian / Swiss town clock tower: stone shaft with quoins and lancet
+ * windows, a four-faced clock stage that keeps the city's time, a slate
+ * mansard roof with dormers, an open lantern, a copper dome, a gilded spire
+ * and the Swiss flag. Faces glow at night; the hands follow engine.hour.
+ */
+class ClockTower {
+  group = new THREE.Group();
+  private hands: { hour: THREE.Object3D; minute: THREE.Object3D }[] = [];
+  private faceMat: THREE.MeshStandardMaterial;
+  private flag: THREE.Group;
+  private lastChime = -1;
+  chimes = 0;
+
+  constructor(engine: CityEngine) {
+    const y0 = engine.surfaceY(CLOCK_TOWER.x, CLOCK_TOWER.z, (m) => /pavement|earth|grass|terrain|asphalt|road/i.test(m), 6) ?? 0.2;
+    this.group.position.set(CLOCK_TOWER.x, y0, CLOCK_TOWER.z);
+    const stone = "#ddd2bd";
+    const quoin = "#bfb39b";
+    const dark = "#2b3036";
+    const slate = "#3f5560";
+    const copper = "#5f8f80";
+    const gold = "#d4af37";
+    const P: Part[] = [];
+    const W = 5.6; // shaft width
+    const H = 21;
+    // Plinth and shaft.
+    P.push(tint(at(new THREE.BoxGeometry(W + 1.4, 1.2, W + 1.4), 0, 0.6, 0), quoin));
+    P.push(tint(at(new THREE.BoxGeometry(W, H, W), 0, 1.2 + H / 2, 0), stone));
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) P.push(tint(at(new THREE.BoxGeometry(0.9, H, 0.9), (sx * W) / 2, 1.2 + H / 2, (sz * W) / 2), quoin));
+    // Belt courses.
+    for (const y of [6, 12, 18]) P.push(tint(at(new THREE.BoxGeometry(W + 0.5, 0.35, W + 0.5), 0, y, 0), quoin));
+    // Lancet windows, three tiers on each face.
+    for (let side = 0; side < 4; side++) {
+      const a = (side * Math.PI) / 2;
+      for (const [y, h] of [[3.7, 2.6], [9.2, 3.2], [15.2, 3.4]] as [number, number][]) {
+        for (const off of [-0.9, 0.9]) {
+          const win = new THREE.BoxGeometry(0.75, h, 0.2);
+          win.translate(off, y, W / 2 + 0.02);
+          win.rotateY(a);
+          P.push(tint(win, dark));
+          const arch = new THREE.CylinderGeometry(0.375, 0.375, 0.2, 10, 1, false, 0, Math.PI);
+          arch.rotateX(Math.PI / 2);
+          arch.rotateZ(Math.PI / 2);
+          arch.translate(off, y + h / 2, W / 2 + 0.02);
+          arch.rotateY(a);
+          P.push(tint(arch, dark));
+        }
+      }
+    }
+    // Clock stage, slightly proud of the shaft, with corner pilasters and a bracketed cornice.
+    const cy = 1.2 + H + 3.4;
+    const CW = W + 0.9;
+    P.push(tint(at(new THREE.BoxGeometry(CW, 6.8, CW), 0, cy, 0), stone));
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) P.push(tint(at(new THREE.BoxGeometry(0.7, 6.8, 0.7), (sx * CW) / 2, cy, (sz * CW) / 2), quoin));
+    P.push(tint(at(new THREE.BoxGeometry(CW + 1.2, 0.6, CW + 1.2), 0, cy + 3.7, 0), quoin));
+    P.push(tint(at(new THREE.BoxGeometry(CW + 0.6, 0.5, CW + 0.6), 0, cy - 3.6, 0), quoin));
+    for (let k = -2; k <= 2; k++) {
+      for (let side = 0; side < 4; side++) {
+        const br = new THREE.BoxGeometry(0.3, 0.6, 0.5);
+        br.translate(k * 1.4, cy + 3.15, CW / 2 + 0.25);
+        br.rotateY((side * Math.PI) / 2);
+        P.push(tint(br, quoin));
+      }
+    }
+    // Gilded urns on the cornice corners.
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      P.push(tint(at(new THREE.CylinderGeometry(0.25, 0.35, 0.7, 8), (sx * (CW + 0.8)) / 2, cy + 4.35, (sz * (CW + 0.8)) / 2), gold));
+      P.push(tint(at(new THREE.SphereGeometry(0.28, 8, 6), (sx * (CW + 0.8)) / 2, cy + 4.9, (sz * (CW + 0.8)) / 2), gold));
+    }
+    // Mansard roof with a dormer per side.
+    const roofY = cy + 4.0;
+    const roof = new THREE.CylinderGeometry(2.3, (CW + 1.0) / Math.SQRT2, 6.2, 4, 1);
+    roof.rotateY(Math.PI / 4);
+    P.push(tint(at(roof, 0, roofY + 3.1, 0), slate));
+    for (let side = 0; side < 4; side++) {
+      const d = new THREE.BoxGeometry(1.3, 1.6, 1.0);
+      d.translate(0, roofY + 2.2, CW / 2 - 0.6);
+      d.rotateY((side * Math.PI) / 2);
+      P.push(tint(d, stone));
+      const dw = new THREE.BoxGeometry(0.7, 1.0, 0.1);
+      dw.translate(0, roofY + 2.1, CW / 2 - 0.06);
+      dw.rotateY((side * Math.PI) / 2);
+      P.push(tint(dw, dark));
+      const dr = new THREE.ConeGeometry(0.95, 0.9, 4);
+      dr.rotateY(Math.PI / 4);
+      dr.translate(0, roofY + 3.4, CW / 2 - 0.6);
+      dr.rotateY((side * Math.PI) / 2);
+      P.push(tint(dr, slate));
+    }
+    // Open lantern: deck, eight columns, entablature.
+    const ly = roofY + 6.2;
+    P.push(tint(at(new THREE.BoxGeometry(3.6, 0.4, 3.6), 0, ly + 0.2, 0), quoin));
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      P.push(tint(at(new THREE.CylinderGeometry(0.13, 0.15, 2.6, 6), Math.cos(a) * 1.45, ly + 1.7, Math.sin(a) * 1.45), stone));
+    }
+    P.push(tint(at(new THREE.CylinderGeometry(1.85, 1.85, 0.45, 16), 0, ly + 3.2, 0), quoin));
+    // Copper dome, gilded ball and spire.
+    P.push(tint(at(new THREE.SphereGeometry(1.7, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), 0, ly + 3.4, 0), copper));
+    for (let k = 0; k < 8; k++) {
+      const rib = new THREE.TorusGeometry(1.72, 0.05, 4, 16, Math.PI / 2);
+      rib.rotateY((k / 8) * Math.PI * 2);
+      rib.translate(0, ly + 3.4, 0);
+      P.push(tint(rib, gold));
+    }
+    P.push(tint(at(new THREE.SphereGeometry(0.32, 10, 8), 0, ly + 5.3, 0), gold));
+    P.push(tint(at(new THREE.CylinderGeometry(0.04, 0.12, 4.2, 6), 0, ly + 7.4, 0), gold));
+    const body = new THREE.Mesh(mergeParts(P), vmat(0.75, 0.08));
+    body.castShadow = true;
+    body.receiveShadow = true;
+    this.group.add(body);
+
+    // Four clock faces with Roman-style hour marks and moving hands.
+    this.faceMat = new THREE.MeshStandardMaterial({ color: "#f7f1e1", roughness: 0.5, emissive: "#ffd894", emissiveIntensity: 0 });
+    const R = 2.15;
+    for (let side = 0; side < 4; side++) {
+      const face = new THREE.Group();
+      face.rotation.y = (side * Math.PI) / 2;
+      const holder = new THREE.Group();
+      holder.position.set(0, cy, CW / 2 + 0.06);
+      face.add(holder);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(R, 40), this.faceMat);
+      holder.add(disc);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(R + 0.08, 0.14, 8, 40), new THREE.MeshStandardMaterial({ color: gold, metalness: 0.8, roughness: 0.3 }));
+      holder.add(ring);
+      const ticks: Part[] = [];
+      for (let k = 0; k < 60; k++) {
+        const a = (k / 60) * Math.PI * 2;
+        const big = k % 5 === 0;
+        const t = new THREE.BoxGeometry(big ? 0.12 : 0.04, big ? 0.42 : 0.16, 0.02);
+        t.translate(0, R - (big ? 0.32 : 0.16), 0.02);
+        t.rotateZ(-a);
+        ticks.push(tint(t, "#1d1d1f"));
+      }
+      ticks.push(tint(at(new THREE.TorusGeometry(R * 0.55, 0.025, 4, 40), 0, 0, 0.02), "#1d1d1f"));
+      holder.add(new THREE.Mesh(mergeParts(ticks), new THREE.MeshBasicMaterial({ vertexColors: true })));
+      const handMat = new THREE.MeshStandardMaterial({ color: "#121214", metalness: 0.5, roughness: 0.4 });
+      const hourHand = new THREE.Group();
+      const hh = new THREE.Mesh(at(new THREE.BoxGeometry(0.16, R * 0.55, 0.04), 0, R * 0.22, 0.06), handMat);
+      hourHand.add(hh);
+      const minuteHand = new THREE.Group();
+      const mh = new THREE.Mesh(at(new THREE.BoxGeometry(0.09, R * 0.82, 0.04), 0, R * 0.36, 0.1), handMat);
+      minuteHand.add(mh);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.12, 12).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: gold, metalness: 0.8 }));
+      hub.position.z = 0.12;
+      holder.add(hourHand, minuteHand, hub);
+      this.hands.push({ hour: hourHand, minute: minuteHand });
+      this.group.add(face);
+    }
+
+    // Swiss flag on the spire.
+    this.flag = new THREE.Group();
+    this.flag.position.set(0, ly + 8.6, 0);
+    const red = new THREE.Mesh(at(new THREE.BoxGeometry(1.6, 1.6, 0.04), 0.85, 0, 0), new THREE.MeshStandardMaterial({ color: "#d52b1e", side: THREE.DoubleSide }));
+    const crossMat = new THREE.MeshStandardMaterial({ color: "#ffffff" });
+    const c1 = new THREE.Mesh(at(new THREE.BoxGeometry(1.0, 0.32, 0.06), 0.85, 0, 0), crossMat);
+    const c2 = new THREE.Mesh(at(new THREE.BoxGeometry(0.32, 1.0, 0.06), 0.85, 0, 0), crossMat);
+    this.flag.add(red, c1, c2);
+    this.group.add(this.flag);
+  }
+
+  update(hour: number, night: number, t: number) {
+    const h = ((hour % 24) + 24) % 24;
+    const minute = (h % 1) * Math.PI * 2;
+    const hr = ((h % 12) / 12) * Math.PI * 2;
+    for (const x of this.hands) {
+      x.minute.rotation.z = -minute;
+      x.hour.rotation.z = -hr;
+    }
+    this.faceMat.emissiveIntensity = night * 0.9;
+    this.flag.rotation.y = Math.sin(t * 0.7) * 0.35 + 0.4;
+    // Count the hours as they strike (for the status line).
+    const whole = Math.floor(h);
+    if (whole !== this.lastChime) {
+      if (this.lastChime >= 0) this.chimes++;
+      this.lastChime = whole;
+    }
   }
 }
 
@@ -1232,29 +1427,60 @@ class Horizon {
   private shipLights: THREE.MeshBasicMaterial;
 
   constructor() {
-    // Distant islands and headlands fading into the haze.
+    // Alpine range round the lake: forested foothills, grey rock, snow on the peaks, softened by haze.
     let seed = 99;
     const rnd = () => ((seed = (16807 * seed) % 0x7fffffff) - 1) / 0x7ffffffe;
-    const islandMat = new THREE.MeshStandardMaterial({ color: "#6f8f62", roughness: 1, flatShading: true });
-    const rockMat = new THREE.MeshStandardMaterial({ color: "#8d8577", roughness: 1, flatShading: true });
-    for (let k = 0; k < 14; k++) {
-      const a = (k / 14) * Math.PI * 2 + rnd() * 0.3;
-      const r = 650 + rnd() * 500;
-      const w = 50 + rnd() * 140;
-      const h = 14 + rnd() * 55;
-      const geo = new THREE.IcosahedronGeometry(1, 2);
-      const p = geo.getAttribute("position") as THREE.BufferAttribute;
+    const hash = (x: number, y: number, z: number) => {
+      const v = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    const forest = new THREE.Color("#4a6646");
+    const rockC = new THREE.Color("#7f7c76");
+    const rockDark = new THREE.Color("#5f5d5a");
+    const snow = new THREE.Color("#f3f6f9");
+    const alpMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
+    const peak = (radius: number, height: number) => {
+      const g = new THREE.ConeGeometry(radius, height, 14, 9);
+      g.translate(0, height / 2, 0);
+      const p = g.getAttribute("position") as THREE.BufferAttribute;
+      const col = new Float32Array(p.count * 3);
+      const c = new THREE.Color();
       for (let i = 0; i < p.count; i++) {
-        const y = p.getY(i);
-        const n = 0.75 + rnd() * 0.5;
-        p.setXYZ(i, p.getX(i) * w * n, Math.max(-0.2, y) * h * n, p.getZ(i) * w * 0.7 * n);
+        const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+        const f = y / height; // 0 base .. 1 summit
+        const n = hash(Math.round(x * 10), Math.round(y * 10), Math.round(z * 10));
+        const jag = 1 + (n - 0.5) * 0.45 * (1 - f * 0.4);
+        p.setXYZ(i, x * jag, y + (f > 0.02 && f < 0.98 ? (n - 0.5) * height * 0.07 : 0), z * jag);
+        const snowLine = 0.55 + (n - 0.5) * 0.18;
+        if (f > snowLine) c.copy(snow);
+        else if (f > 0.2) c.copy(n > 0.5 ? rockC : rockDark).lerp(snow, Math.max(0, (f - snowLine + 0.12) / 0.12) * 0.5);
+        else c.copy(forest).lerp(rockC, f / 0.2);
+        col.set([c.r, c.g, c.b], i * 3);
       }
+      g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      g.computeVertexNormals();
+      return g;
+    };
+    for (let k = 0; k < 22; k++) {
+      const a = (k / 22) * Math.PI * 2 + rnd() * 0.2;
+      const r = 980 + rnd() * 280;
+      const parts: Part[] = [];
+      const main = 230 + rnd() * 230;
+      parts.push(peak(main * 0.85, main));
+      for (let s2 = 0; s2 < 3; s2++) {
+        const h2 = main * (0.45 + rnd() * 0.35);
+        const g = peak(h2 * 0.95, h2);
+        g.translate((rnd() - 0.5) * main * 1.6, 0, (rnd() - 0.5) * main * 0.8);
+        parts.push(g);
+      }
+      const geo = mergeParts(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
       geo.computeVertexNormals();
-      const isl = new THREE.Mesh(geo, k % 3 ? islandMat : rockMat);
-      isl.position.set(CENTER[0] + Math.cos(a) * r, -8.5, CENTER[2] + Math.sin(a) * r);
-      isl.rotation.y = rnd() * Math.PI;
-      this.group.add(isl);
+      const m = new THREE.Mesh(geo, alpMat);
+      m.position.set(CENTER[0] + Math.cos(a) * r, -9, CENTER[2] + Math.sin(a) * r);
+      m.rotation.y = -a + Math.PI / 2;
+      this.group.add(m);
     }
+    const rockMat = new THREE.MeshStandardMaterial({ color: "#8d8577", roughness: 1, flatShading: true });
 
     // Lighthouse on a headland with a sweeping beam.
     const lh = new THREE.Group();
@@ -1297,7 +1523,7 @@ class Horizon {
       win.position.set(0, 9, -22);
       s.add(win);
       this.group.add(s);
-      this.ships.push({ obj: s, a: k * 1.6, r: 900 + k * 90, speed: (k % 2 ? 1 : -1) * 0.006 });
+      this.ships.push({ obj: s, a: k * 1.6, r: 560 + k * 70, speed: (k % 2 ? 1 : -1) * 0.006 });
     }
 
     // Red aviation warning lights on the tallest towers.
@@ -1331,6 +1557,7 @@ export class CityLife {
   train: SteamTrain;
   airliner: Airliner | null = null;
   fair: Fairground;
+  clock: ClockTower;
   boats: Boats;
   birds: Birds;
   horizon: Horizon;
@@ -1340,13 +1567,19 @@ export class CityLife {
   constructor(private engine: CityEngine, traffic: Traffic3D) {
     this.root.name = "city-life";
     engine.scene.add(this.root);
+    // Clear the model's static fair rides and its parked train so the animated ones don't double up.
+    const ground = /earth|grass|terrain|tree|asphalt|road_paint|pavement|sand|water/;
+    engine.carve([FAIR_SQUARE.x0, 0.45, FAIR_SQUARE.z0 - 3, FAIR_SQUARE.x1 + 2, 45, FAIR_SQUARE.z1 + 2], (m) => !/earth|grass|terrain|tree|asphalt|road_paint/.test(m));
+    engine.carve([FAIR_SQUARE.x0 + 2, 0.08, FAIR_SQUARE.z0 + 2, FAIR_SQUARE.x1 - 2, 45, FAIR_SQUARE.z1 - 2], (m) => !ground.test(m));
+    engine.carve([-40, 1.6, RAIL.z - 2.9, 32, 6, RAIL.z + 3], (m) => /^\.14_0$|^\.2_2$|^\.9_1$/.test(m));
     this.lamps = new StreetLamps(traffic);
     this.train = new SteamTrain(this.root);
     this.fair = new Fairground(engine);
+    this.clock = new ClockTower(engine);
     this.boats = new Boats(engine);
     this.birds = new Birds();
     this.horizon = new Horizon();
-    this.root.add(this.lamps.group, this.train.group, this.fair.group, this.boats.group, this.birds.group, this.horizon.group);
+    this.root.add(this.lamps.group, this.train.group, this.fair.group, this.clock.group, this.boats.group, this.birds.group, this.horizon.group);
     if (engine.plane) {
       this.airliner = new Airliner(engine.plane);
       this.root.add(this.airliner.group);
@@ -1382,6 +1615,7 @@ export class CityLife {
     this.train.update(dt, n, t);
     this.airliner?.update(dt, n, t);
     this.fair.update(dt, n, t);
+    this.clock.update(this.engine.hour, n, t);
     this.boats.update(dt, n, t);
     this.birds.update(dt, n, t);
     this.horizon.update(dt, n, t);
