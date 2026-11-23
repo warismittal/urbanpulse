@@ -165,7 +165,7 @@ export function WorldLabels({ items, visible = true }: { items: { id: string; te
   }, [h, items, visible]);
   if (!h) return null;
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 top-14 z-[5] overflow-hidden">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 top-14 z-[5] hidden overflow-hidden sm:block">
       {items.map((it) => (
         <div
           key={it.id}

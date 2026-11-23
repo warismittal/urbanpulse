@@ -1419,6 +1419,7 @@ class Birds {
 
 class Horizon {
   group = new THREE.Group();
+  haze = { value: new THREE.Color("#dfe9ee") };
   private ships: { obj: THREE.Object3D; a: number; r: number; speed: number }[] = [];
   private beam: THREE.Mesh;
   private beamMat: THREE.MeshBasicMaterial;
@@ -1438,7 +1439,17 @@ class Horizon {
     const rockC = new THREE.Color("#7f7c76");
     const rockDark = new THREE.Color("#5f5d5a");
     const snow = new THREE.Color("#f3f6f9");
-    const alpMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
+    // Scene fog would swallow them at this distance; instead they get their own height-based haze
+    // (thick at the waterline, thinner on the summits) in the current fog colour.
+    const alpMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true, fog: false });
+    const haze = this.haze;
+    alpMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uHaze = haze;
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying float vWY;").replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvWY = (modelMatrix * vec4(transformed, 1.0)).y;");
+      sh.fragmentShader = sh.fragmentShader
+        .replace("#include <common>", "#include <common>\nvarying float vWY;\nuniform vec3 uHaze;")
+        .replace("#include <dithering_fragment>", "#include <dithering_fragment>\nfloat hz = 0.3 + 0.65 * (1.0 - smoothstep(-30.0, 120.0, vWY));\ngl_FragColor.rgb = mix(gl_FragColor.rgb, uHaze, clamp(hz, 0.0, 0.97));");
+    };
     const peak = (radius: number, height: number) => {
       const g = new THREE.ConeGeometry(radius, height, 14, 9);
       g.translate(0, height / 2, 0);
@@ -1463,7 +1474,7 @@ class Horizon {
     };
     for (let k = 0; k < 22; k++) {
       const a = (k / 22) * Math.PI * 2 + rnd() * 0.2;
-      const r = 980 + rnd() * 280;
+      const r = 1240 + rnd() * 200;
       const parts: Part[] = [];
       const main = 230 + rnd() * 230;
       parts.push(peak(main * 0.85, main));
@@ -1476,7 +1487,8 @@ class Horizon {
       const geo = mergeParts(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
       geo.computeVertexNormals();
       const m = new THREE.Mesh(geo, alpMat);
-      m.position.set(CENTER[0] + Math.cos(a) * r, -9, CENTER[2] + Math.sin(a) * r);
+      m.position.set(CENTER[0] + Math.cos(a) * r, -30, CENTER[2] + Math.sin(a) * r);
+      m.scale.set(0.8, 0.6, 0.8);
       m.rotation.y = -a + Math.PI / 2;
       this.group.add(m);
     }
@@ -1536,7 +1548,8 @@ class Horizon {
     }
   }
 
-  update(dt: number, night: number, t: number) {
+  update(dt: number, night: number, t: number, fog?: THREE.Color) {
+    if (fog) this.haze.value.copy(fog);
     for (const s of this.ships) {
       s.a += s.speed * dt;
       s.obj.position.set(CENTER[0] + Math.cos(s.a) * s.r, -8.4 + Math.sin(t * 0.4 + s.a) * 0.3, CENTER[2] + Math.sin(s.a) * s.r);
@@ -1618,7 +1631,7 @@ export class CityLife {
     this.clock.update(this.engine.hour, n, t);
     this.boats.update(dt, n, t);
     this.birds.update(dt, n, t);
-    this.horizon.update(dt, n, t);
+    this.horizon.update(dt, n, t, (this.engine.scene.fog as THREE.Fog | null)?.color);
     for (const c of this.crossings) c.update(dt, t);
   };
 

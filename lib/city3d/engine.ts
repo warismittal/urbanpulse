@@ -95,9 +95,11 @@ export class OrbitRig {
   private shake = 0;
 
   constructor(private camera: THREE.PerspectiveCamera, private dom: HTMLElement) {
+    dom.style.touchAction = "none"; // we handle pinch and drag ourselves on phones
     dom.addEventListener("pointerdown", this.down);
     window.addEventListener("pointermove", this.move);
     window.addEventListener("pointerup", this.up);
+    window.addEventListener("pointercancel", this.up);
     dom.addEventListener("wheel", this.wheel, { passive: false });
     dom.addEventListener("contextmenu", (e) => e.preventDefault());
   }
@@ -106,15 +108,50 @@ export class OrbitRig {
     this.dom.removeEventListener("pointerdown", this.down);
     window.removeEventListener("pointermove", this.move);
     window.removeEventListener("pointerup", this.up);
+    window.removeEventListener("pointercancel", this.up);
     this.dom.removeEventListener("wheel", this.wheel);
   }
 
+  /** Active touch points, for two-finger pinch-zoom and pan on phones. */
+  private touches = new Map<number, { x: number; y: number }>();
+  private pinch: { dist: number; cx: number; cy: number } | null = null;
+
   private down = (e: PointerEvent) => {
     if (!this.enabled) return;
-    this.dragging = { button: e.button === 2 || e.shiftKey ? 2 : 0, x: e.clientX, y: e.clientY };
     this.tween = null;
+    if (e.pointerType === "touch") {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touches.size === 2) {
+        const [a, b] = [...this.touches.values()];
+        this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
+        this.dragging = null;
+        return;
+      }
+    }
+    this.dragging = { button: e.button === 2 || e.shiftKey ? 2 : 0, x: e.clientX, y: e.clientY };
   };
   private move = (e: PointerEvent) => {
+    if (e.pointerType === "touch" && this.touches.has(e.pointerId)) {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pinch && this.touches.size >= 2) {
+        const [a, b] = [...this.touches.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const cx = (a.x + b.x) / 2;
+        const cy = (a.y + b.y) / 2;
+        // Pinch to zoom, two-finger drag to pan.
+        this.goal.radius *= this.pinch.dist / Math.max(1, dist);
+        const k = this.goal.radius / 650;
+        const dx = cx - this.pinch.cx;
+        const dy = cy - this.pinch.cy;
+        const sin = Math.sin(this.goal.theta);
+        const cos = Math.cos(this.goal.theta);
+        this.goal.target.x += (-dx * cos - dy * sin) * k;
+        this.goal.target.z += (dx * sin - dy * cos) * k;
+        this.pinch = { dist, cx, cy };
+        this.clampGoal();
+        return;
+      }
+    }
     const d = this.dragging;
     if (!d) return;
     const dx = e.clientX - d.x;
@@ -134,8 +171,12 @@ export class OrbitRig {
     }
     this.clampGoal();
   };
-  private up = () => {
+  private up = (e?: PointerEvent) => {
     this.dragging = null;
+    if (e && e.pointerType === "touch") {
+      this.touches.delete(e.pointerId);
+      if (this.touches.size < 2) this.pinch = null;
+    }
   };
   private wheel = (e: WheelEvent) => {
     if (!this.enabled) return;
